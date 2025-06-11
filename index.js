@@ -1,67 +1,55 @@
-import express from "express";
-import { chromium } from "playwright";
+const express = require('express');
+const { chromium } = require('playwright');
 
 const app = express();
-const PORT = process.env.PORT || 8080;
+app.use(express.json());
 
-// === ТВОЇ ДАНІ ===
-const FACEBOOK_URL = 'https://www.facebook.com/ads/library/?active_status=active';
-const PROXY_SERVER = 'socks5://yEwHxb91:MLpy9sXG@156.246.130.157:64768';
+app.get('/scrape', async (req, res) => {
+  const proxy = 'socks5://yEwHxb91:MLpy9sXG@156.246.130.157:64768';
+  const fbUrl = req.query.url || 'https://www.facebook.com/ads/library/?active_status=active';
 
-// Твої кукі (розпарсимо в об'єкти)
-const RAW_COOKIES = `sb=-0BBZpYRgKBE876qcOFcxqNT; datr=_EBBZpx3eWjjNfCuYsHeQXMT; c_user=100016128750721; ps_l=1; ps_n=1; presence=C%7B%22t3%22%3A%5B%5D%2C%22utc3%22%3A1749331040651%2C%22v%22%3A1%7D; wd=1656x952; fr=1eVkqbkYKVQnHy4gA.AWe1qnlHPiXVwKrZFLCMMLp80qSNR_fWKHmsxiqtBHX1O150f2Y.BoSaPa..AAA.0.0.BoSaPa.AWcXzg5x-z316WUKCIijkjbIW6Q; xs=33%3AC6w1SSavbUF5cQ%3A2%3A1715552532%3A-1%3A-1%3A%3AAcWjLZrzqM2xtoKXUcrrRDWnDVkK_9Xaad9pnc7bFA; alsfid={"id":"f20786144","timestamp":1749656552951.3}`;
+  const cookies = [
+    { name: 'sb', value: '-0BBZpYRgKBE876qcOFcxqNT', domain: '.facebook.com', path: '/' },
+    { name: 'datr', value: '_EBBZpx3eWjjNfCuYsHeQXMT', domain: '.facebook.com', path: '/' },
+    { name: 'c_user', value: '100016128750721', domain: '.facebook.com', path: '/' },
+    { name: 'ps_l', value: '1', domain: '.facebook.com', path: '/' },
+    { name: 'ps_n', value: '1', domain: '.facebook.com', path: '/' },
+    { name: 'presence', value: 'C%7B%22t3%22%3A%5B%5D%2C%22utc3%22%3A1749331040651%2C%22v%22%3A1%7D', domain: '.facebook.com', path: '/' },
+    { name: 'fr', value: '1eVkqbkYKVQnHy4gA.AWe1qnlHPiXVwKrZFLCMMLp80qSNR_fWKHmsxiqtBHX1O150f2Y.BoSaPa..AAA.0.0.BoSaPa.AWcXzg5x-z316WUKCIijkjbIW6Q', domain: '.facebook.com', path: '/' },
+    { name: 'xs', value: '33%3AC6w1SSavbUF5cQ%3A2%3A1715552532%3A-1%3A-1%3A%3AAcWjLZrzqM2xtoKXUcrrRDWnDVkK_9Xaad9pnc7bFA', domain: '.facebook.com', path: '/' },
+    { name: 'alsfid', value: '{"id":"f20786144","timestamp":1749656552951.3}', domain: '.facebook.com', path: '/' },
+    // додати інші кукі якщо потрібно
+  ];
 
-function parseCookies(str) {
-  return str.split('; ').map(pair => {
-    const [name, ...rest] = pair.split('=');
-    return { name, value: rest.join('='), domain: '.facebook.com', path: '/' };
-  });
-}
+  const userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36";
+  const contextOptions = {
+    proxy: { server: proxy },
+    userAgent,
+    locale: 'en-US',
+    viewport: { width: 1280, height: 800 },
+    bypassCSP: true,
+    ignoreHTTPSErrors: true,
+  };
 
-// === ГОЛОВНА ФУНКЦІЯ ПАРСИНГУ ===
-async function scrapeFacebookAdsLibrary() {
-  console.log(`[INFO] Launching browser with proxy: ${PROXY_SERVER}`);
-  const browser = await chromium.launch({
-    headless: true,
-    proxy: {
-      server: PROXY_SERVER
-    }
-  });
-
-  const context = await browser.newContext();
-  await context.addCookies(parseCookies(RAW_COOKIES));
-
-  const page = await context.newPage();
-
-  // Логи для дебага
-  page.on('console', msg => console.log(`[BROWSER][CONSOLE] ${msg.text()}`));
-  page.on('requestfailed', req => console.error(`[BROWSER][REQUESTFAILED] ${req.url()} [${req.failure().errorText}]`));
-
-  console.log(`[INFO] Navigating to ${FACEBOOK_URL}`);
-  await page.goto(FACEBOOK_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-
-  // Можна додати скрін для дебага
-  await page.screenshot({ path: "screenshot.png" });
-
-  // Для прикладу просто повернемо HTML (можна видалити)
-  const html = await page.content();
-
-  await browser.close();
-
-  return html;
-}
-
-// === ENDPOINT для Railway ===
-app.get("/scrape", async (req, res) => {
+  let browser;
   try {
-    const data = await scrapeFacebookAdsLibrary();
-    res.send(data);
-  } catch (err) {
-    console.error(`[ERROR] ${err.message}`);
-    res.status(500).json({ error: err.message });
+    browser = await chromium.launch({ headless: true });
+    const context = await browser.newContext(contextOptions);
+    await context.addCookies(cookies);
+    const page = await context.newPage();
+
+    await page.goto(fbUrl, { timeout: 60000, waitUntil: 'domcontentloaded' });
+    // Далі твоя логіка
+
+    res.json({ success: true, message: "Page loaded" });
+  } catch (error) {
+    res.status(500).json({ error: error.message, stack: error.stack });
+  } finally {
+    if (browser) await browser.close();
   }
 });
 
+const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`[INFO] Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
