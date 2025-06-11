@@ -1,16 +1,10 @@
 const express = require('express');
 const { chromium } = require('playwright');
 const app = express();
+const PORT = process.env.PORT || 8080;
 
-app.use(express.json());
-
-const PROXY = {
-  server: 'http://156.246.130.157:64768',
-  username: 'yEwHxb91',
-  password: 'MLpy9sXG'
-};
-
-const COOKIES = [
+// === ЗАМІНИ на свої ===
+const FB_COOKIES = [
   { name: 'sb', value: '-0BBZpYRgKBE876qcOFcxqNT', domain: '.facebook.com', path: '/' },
   { name: 'datr', value: '_EBBZpx3eWjjNfCuYsHeQXMT', domain: '.facebook.com', path: '/' },
   { name: 'c_user', value: '100016128750721', domain: '.facebook.com', path: '/' },
@@ -22,59 +16,57 @@ const COOKIES = [
   { name: 'xs', value: '33%3AC6w1SSavbUF5cQ%3A2%3A1715552532%3A-1%3A-1%3A%3AAcWjLZrzqM2xtoKXUcrrRDWnDVkK_9Xaad9pnc7bFA', domain: '.facebook.com', path: '/' },
   { name: 'alsfid', value: '{"id":"f20786144","timestamp":1749656552951.3}', domain: '.facebook.com', path: '/' }
 ];
-
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+// === ПРОКСІ (http://user:pass@ip:port)
+const PROXY = 'http://yEwHxb91:MLpy9sXG@156.246.130.157:64768';
 
 app.get('/scrape', async (req, res) => {
   const url = req.query.url;
-  if (!url) return res.status(400).json({ error: 'Missing url' });
+  if (!url) return res.json({ error: 'Missing url param' });
 
   let browser;
   try {
     browser = await chromium.launch({
       headless: true,
-      proxy: PROXY
+      proxy: {
+        server: PROXY
+      }
     });
-    const context = await browser.newContext({
-      userAgent: USER_AGENT,
-      ignoreHTTPSErrors: true,
-      viewport: { width: 1280, height: 800 }
-    });
-    await context.addCookies(COOKIES);
+    const context = await browser.newContext();
+    await context.addCookies(FB_COOKIES);
 
     const page = await context.newPage();
-    console.log('[INFO] Navigating:', url);
 
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    // Ловимо всі mp4-посилання
+    const mp4Links = [];
+    page.on('request', request => {
+      const reqUrl = request.url();
+      if (reqUrl.includes('.mp4') && !mp4Links.includes(reqUrl)) {
+        mp4Links.push(reqUrl);
+      }
+    });
 
-    // Витягуємо всі mp4-лінки з відео на сторінці:
-    const mp4_links = await page.$$eval('video source', nodes =>
-      nodes.map(n => n.src).filter(src => src && src.endsWith('.mp4'))
-    );
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 70000 });
 
-    // Або, якщо потрібні всі відео в network:
-    // const requests = [];
-    // page.on('request', req => { if (req.url().endsWith('.mp4')) requests.push(req.url()); });
-
-    // Додатково, якщо потрібно повний HTML:
-    // const html = await page.content();
+    // Автоскрол (імітація користувача, щоб підгрузились всі креативи)
+    for (let i = 0; i < 20; i++) {
+      await page.mouse.wheel(0, 1000);
+      await page.waitForTimeout(1200);
+    }
+    // Ще трохи зачекати
+    await page.waitForTimeout(3000);
 
     await browser.close();
-
     res.json({
       status: 'ok',
       url,
-      mp4_links
-      // , html // якщо потрібно
+      mp4_links: mp4Links
     });
   } catch (e) {
     if (browser) await browser.close();
-    console.error(e);
-    res.status(500).json({ error: String(e) });
+    res.json({ error: e.message || e.toString() });
   }
 });
 
-const PORT = process.env.PORT || 8080;
 app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
+  console.log('Server running on port', PORT);
 });
