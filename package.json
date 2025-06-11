@@ -2,11 +2,13 @@
   "name": "playwright-facebook-bot",
   "version": "1.0.0",
   "main": "index.js",
+  "type": "commonjs",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "postinstall": "npx playwright install --with-deps"
   },
   "dependencies": {
-    "playwright": "^1.43.1",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "playwright": "^1.44.0"
   }
 }
