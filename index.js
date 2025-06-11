@@ -1,13 +1,15 @@
 import express from "express";
 import { chromium } from "playwright";
+import fs from "fs/promises";
 
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// Проксі і кукі
-const PROXY_SERVER = "http://yEwHxb91:MLpy9sXG@156.246.130.157:64768";
-const USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.128 Safari/537.36";
-const FACEBOOK_COOKIES = [
+// ТВОЯ ПРОКСІ (http, формат user:pass@host:port)
+const proxy = "http://yEwHxb91:MLpy9sXG@156.246.130.157:64768";
+
+// ТВОЇ КУКІ (можна через JSON, main domain - .facebook.com)
+const cookies = [
   { name: "sb", value: "-0BBZpYRgKBE876qcOFcxqNT", domain: ".facebook.com", path: "/" },
   { name: "datr", value: "_EBBZpx3eWjjNfCuYsHeQXMT", domain: ".facebook.com", path: "/" },
   { name: "c_user", value: "100016128750721", domain: ".facebook.com", path: "/" },
@@ -20,44 +22,139 @@ const FACEBOOK_COOKIES = [
   { name: "alsfid", value: '{"id":"f20786144","timestamp":1749656552951.3}', domain: ".facebook.com", path: "/" }
 ];
 
+// Юзер-агент
+const USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.128 Safari/537.36";
+
+// Додаємо debug-лог файли
+async function saveScreenshot(page, name = "debug.png") {
+  try {
+    await page.screenshot({ path: name, fullPage: true });
+  } catch (e) { /* ignore */ }
+}
+async function saveHTML(page, name = "debug.html") {
+  try {
+    const html = await page.content();
+    await fs.writeFile(name, html, "utf-8");
+  } catch (e) { /* ignore */ }
+}
+
 app.get("/scrape", async (req, res) => {
   const url = req.query.url;
-  if (!url) return res.status(400).json({ error: "No URL provided" });
+  if (!url) return res.status(400).json({ error: "Missing url param" });
 
-  let browser;
+  let browser, page;
+  let logs = [];
+  let redirects = [];
   try {
     browser = await chromium.launch({
       headless: true,
-      proxy: { server: PROXY_SERVER }
+      args: [
+        `--proxy-server=${proxy}`,
+        "--disable-blink-features=AutomationControlled",
+        "--no-sandbox",
+        "--disable-dev-shm-usage"
+      ]
     });
+
     const context = await browser.newContext({
       userAgent: USER_AGENT,
-      viewport: { width: 1400, height: 900 }
+      ignoreHTTPSErrors: true,
     });
-    await context.addCookies(FACEBOOK_COOKIES);
-    const page = await context.newPage();
 
+    // Кукі
+    await context.addCookies(cookies);
+
+    page = await context.newPage();
+
+    // Консоль лог
+    page.on("console", msg => {
+      logs.push({ type: msg.type(), text: msg.text() });
+    });
+    // Редіректи
+    page.on('request', request => {
+      if (["document"].includes(request.resourceType()) && request.redirectedFrom()) {
+        redirects.push({
+          from: request.redirectedFrom().url(),
+          to: request.url()
+        });
+      }
+    });
+
+    // Навігація
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90000 });
-    await page.waitForTimeout(6000);
 
-    // Всі відео-лінки .mp4
-    const videoLinks = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('video, source'))
-        .map(el => el.src)
-        .filter(src => src && src.includes(".fbcdn.net") && src.endsWith(".mp4"))
-    );
+    // Автоскрол (довантаження динаміки)
+    await autoScroll(page, 2500);
+
+    // Скрин та HTML для дебагу
+    await saveScreenshot(page, "debug.png");
+    await saveHTML(page, "debug.html");
+
+    // Витяг mp4-лінків
+    const mp4_links = await page.evaluate(() => {
+      // MP4 з відео-тегів
+      const links = [];
+      document.querySelectorAll("video source").forEach(s => {
+        if (s.src && s.src.includes(".mp4")) links.push(s.src);
+      });
+      // MP4 просто з src
+      document.querySelectorAll("video").forEach(v => {
+        if (v.src && v.src.includes(".mp4")) links.push(v.src);
+      });
+      // MP4 з посилань на fbcdn
+      document.querySelectorAll("a").forEach(a => {
+        if (a.href && a.href.includes(".mp4")) links.push(a.href);
+      });
+      return Array.from(new Set(links));
+    });
 
     res.json({
       status: "ok",
       url,
-      mp4_links: videoLinks
+      mp4_links,
+      logs,
+      redirects,
+      debug: "debug.png",
+      html: "debug.html"
     });
-
-    await browser.close();
-  } catch (err) {
+  } catch (error) {
+    if (page) {
+      await saveScreenshot(page, "error.png");
+      await saveHTML(page, "error.html");
+    }
+    res.status(500).json({
+      status: "error",
+      error: error.message,
+      logs,
+      redirects,
+      debug: "error.png",
+      html: "error.html"
+    });
+  } finally {
     if (browser) await browser.close();
-    res.json({ status: "error", error: err.message });
   }
 });
 
-app.listen(PORT, () => console.log("Server running on port", PORT));
+// Автоскрол
+async function autoScroll(page, time = 2000) {
+  await page.evaluate(async (scrollDelay) => {
+    await new Promise((resolve) => {
+      let totalHeight = 0;
+      const distance = 600;
+      const timer = setInterval(() => {
+        window.scrollBy(0, distance);
+        totalHeight += distance;
+        if (totalHeight > document.body.scrollHeight || totalHeight > 50000) {
+          clearInterval(timer);
+          resolve();
+        }
+      }, 250);
+      setTimeout(() => {
+        clearInterval(timer);
+        resolve();
+      }, scrollDelay);
+    });
+  }, time);
+}
+
+app.listen(PORT, () => console.log("Playwright bot running at port " + PORT));
