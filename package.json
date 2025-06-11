@@ -1,15 +1,14 @@
 {
-  "name": "facebook-playwright-bot",
+  "name": "facebook-playwright-proxy-bot",
   "version": "1.0.0",
-  "description": "Playwright бот для Meta Ads Library",
   "main": "index.js",
-  "type": "commonjs",
+  "type": "module",
   "scripts": {
     "start": "node index.js",
-    "postinstall": "playwright install chromium"
+    "install-browsers": "npx playwright install chromium"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "playwright": "^1.44.1"
+    "express": "^4.19.2",
+    "playwright": "^1.43.1"
   }
 }
