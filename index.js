@@ -52,7 +52,7 @@ app.get('/scrape', async (req, res) => {
   let browser;
   try {
     browser = await chromium.launch({
-      headless: false, // важливо для антидетекту!
+      headless: true, // важливо для антидетекту!
       args: [
         `--proxy-server=${PROXY}`,
         '--no-sandbox',
