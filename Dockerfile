@@ -1,10 +1,12 @@
-FROM mcr.microsoft.com/playwright:v1.43.1-jammy
+FROM mcr.microsoft.com/playwright:focal
 
 WORKDIR /app
-COPY . .
-RUN npm install
 
-# Встановлюємо всі браузери Playwright
-RUN npx playwright install --with-deps
+COPY package.json package-lock.json* ./
+RUN npm ci
+
+COPY . .
+
+EXPOSE 8080
 
 CMD ["node", "index.js"]
