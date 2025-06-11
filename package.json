@@ -1,6 +1,7 @@
 {
   "name": "playwright-facebook-bot",
   "version": "1.0.0",
+  "description": "Facebook Ads Library Scraper",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
@@ -9,6 +10,6 @@
   },
   "dependencies": {
     "express": "^4.18.2",
-    "playwright": "^1.44.0"
+    "playwright": "^1.43.0"
   }
 }
