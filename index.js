@@ -45,7 +45,8 @@ app.get('/scrape', async (req, res) => {
       }
     });
 
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 70000 });
+   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 180000 });
+console.log(await page.content()); // або збережи у файл
 
     // Автоскрол (імітація користувача, щоб підгрузились всі креативи)
     for (let i = 0; i < 20; i++) {
