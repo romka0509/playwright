@@ -4,7 +4,9 @@ import { chromium } from "playwright";
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// === ТВОЇ ДАНІ ===
+// Проксі і кукі
+const PROXY_SERVER = "http://yEwHxb91:MLpy9sXG@156.246.130.157:64768";
+const USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.128 Safari/537.36";
 const FACEBOOK_COOKIES = [
   { name: "sb", value: "-0BBZpYRgKBE876qcOFcxqNT", domain: ".facebook.com", path: "/" },
   { name: "datr", value: "_EBBZpx3eWjjNfCuYsHeQXMT", domain: ".facebook.com", path: "/" },
@@ -18,47 +20,36 @@ const FACEBOOK_COOKIES = [
   { name: "alsfid", value: '{"id":"f20786144","timestamp":1749656552951.3}', domain: ".facebook.com", path: "/" }
 ];
 
-// === ТВОЇ ПРОКСІ ===
-const PROXY_SERVER = "http://yEwHxb91:MLpy9sXG@156.246.130.157:64768";
-const USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.6261.128 Safari/537.36";
-
 app.get("/scrape", async (req, res) => {
-  const targetUrl = req.query.url;
-
-  if (!targetUrl) return res.status(400).json({ error: "No URL provided." });
+  const url = req.query.url;
+  if (!url) return res.status(400).json({ error: "No URL provided" });
 
   let browser;
   try {
     browser = await chromium.launch({
       headless: true,
-      proxy: {
-        server: PROXY_SERVER
-      }
+      proxy: { server: PROXY_SERVER }
     });
     const context = await browser.newContext({
       userAgent: USER_AGENT,
       viewport: { width: 1400, height: 900 }
     });
     await context.addCookies(FACEBOOK_COOKIES);
-
     const page = await context.newPage();
 
-    // Навігація з більшим таймаутом
-    await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90000 });
+    await page.waitForTimeout(6000);
 
-    // Дочекатись завантаження/авторизації (змінюй селектор під себе)
-    await page.waitForTimeout(7000);
-
-    // Витягуємо mp4 (fbcdn.net/*.mp4)
-    const videoLinks = await page.evaluate(() => {
-      return Array.from(document.querySelectorAll('video, source'))
+    // Всі відео-лінки .mp4
+    const videoLinks = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('video, source'))
         .map(el => el.src)
-        .filter(src => src && src.includes(".fbcdn.net") && src.endsWith(".mp4"));
-    });
+        .filter(src => src && src.includes(".fbcdn.net") && src.endsWith(".mp4"))
+    );
 
     res.json({
       status: "ok",
-      url: targetUrl,
+      url,
       mp4_links: videoLinks
     });
 
@@ -69,6 +60,4 @@ app.get("/scrape", async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log("Server running on port", PORT);
-});
+app.listen(PORT, () => console.log("Server running on port", PORT));
